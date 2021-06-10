@@ -45,8 +45,8 @@ class Poulailler:
 
 
     # PIN GPIO Fin de course
-    GPIO_FC_H = 20
-    GPIO_FC_B = 21 
+    GPIO_FC_H = 21
+    GPIO_FC_B = 20 
 
     # Boutons poussoirs montee/descente/stop
     GPIO_BP_UP = 12
@@ -103,16 +103,16 @@ class Poulailler:
             GPIO.add_event_detect(self.GPIO_FC_H, GPIO.FALLING, callback=self.porte_stop, bouncetime=500)
 
             # sortie output relais, ouvert par défaut
-            GPIO.setup(self.GPIO_RL_1, GPIO.OUT, initial = GPIO.LOW)
-            GPIO.setup(self.GPIO_RL_2, GPIO.OUT, initial = GPIO.LOW)
-            GPIO.setup(self.GPIO_RL_3, GPIO.OUT, initial = GPIO.LOW)
+            GPIO.setup(self.GPIO_RL_1, GPIO.OUT, initial = GPIO.HIGH)
+            GPIO.setup(self.GPIO_RL_2, GPIO.OUT, initial = GPIO.HIGH)
+            GPIO.setup(self.GPIO_RL_3, GPIO.OUT, initial = GPIO.HIGH)
             GPIO.setup(self.GPIO_RL_4, GPIO.OUT, initial = GPIO.HIGH)
             GPIO.setup(self.GPIO_RL_5, GPIO.OUT, initial = GPIO.HIGH)
             GPIO.setup(self.GPIO_RL_6, GPIO.OUT, initial = GPIO.HIGH)
 
             # Detecteur de mouvement
-            GPIO.setup(self.GPIO_MVT, GPIO.IN)
-            GPIO.add_event_detect(self.GPIO_MVT , GPIO.BOTH, callback=self.detection_mvt)
+            # GPIO.setup(self.GPIO_MVT, GPIO.IN)
+            # GPIO.add_event_detect(self.GPIO_MVT , GPIO.BOTH, callback=self.detection_mvt)
 
             time.sleep(1)
             logging.debug("- Init GPIO OK")
@@ -170,12 +170,15 @@ class Poulailler:
 
     def actionne(self, action):
 
+        logging.debug("ACTIONNE action={}".format(action))
+
         # action identique  on ne fait rien
         if action  == self.ACTION:
             return 
 
         # Si le moteur tourne deja, on l'arrete
-        if (action == -1 or action == 1) and self.ACTION != 0:
+        # if (action == -1 or action == 1) and self.ACTION != 0:
+        if GPIO.input(self.GPIO_RL_1) ==  GPIO.LOW:
             GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
  
 
@@ -188,7 +191,7 @@ class Poulailler:
             GPIO.output(self.GPIO_RL_3, GPIO.HIGH)
             time.sleep(.5)
             logging.debug("Set relais moteur ON")
-            GPIO.output(self.GPIO_RL_1, GPIO.LOW) 
+            GPIO.output(self.GPIO_RL_1, GPIO.LOW)
         
         # Montee
         elif action == 1:
@@ -198,6 +201,7 @@ class Poulailler:
             time.sleep(.5)
             logging.debug("Set relais moteur ON")
             GPIO.output(self.GPIO_RL_1, GPIO.LOW)
+
         
         # Arret
         elif action == 0:  
@@ -207,6 +211,8 @@ class Poulailler:
         
 
     def porte_ouvre(self, pin = None):
+
+        logging.debug("OUVRE Evenement sur pin {}".format(pin))
         
         # Position en erreur
         state = self.porte_etat()
@@ -224,6 +230,8 @@ class Poulailler:
    
         
     def porte_ferme(self, pin=None):
+
+        logging.info("FERME Evenement sur pin {}".format(pin))
 
         # Position en erreur
         state = self.porte_etat()
@@ -243,6 +251,7 @@ class Poulailler:
 
     def porte_stop(self, pin = None):
         
+        logging.debug("STOP Evenement sur pin {}".format(pin))
 
         # arret du moteur
         if     self.ACTION == -1 and pin == self.GPIO_FC_B \
@@ -264,8 +273,8 @@ class Poulailler:
     # -2: Etat schrödinger (ouverte & fermee en mm tps)
     def porte_etat(self):
         
-        fc_h = not GPIO.input(self.GPIO_FC_H) # fin course haut
-        fc_b = not GPIO.input(self.GPIO_FC_B) # fin course bas
+        fc_h =  not GPIO.input(self.GPIO_FC_H) # fin course haut
+        fc_b =  not GPIO.input(self.GPIO_FC_B) # fin course bas
         # erreur
         if fc_h == 1 and fc_b == 1:
             return self.STATE_ERR
@@ -336,8 +345,9 @@ class Poulailler:
         
         ## Attente si action précédente
         if self.ACTION != 0:
-            logging.debug("Attente fin de l'action en cours")
+            logging.info("Attente fin de l'action en cours")
             while self.ACTION != 0:
+                logging.debug("ATTENTE ACTION {}".format(self.ACTION))
                 time.sleep(1)
         
         logging.debug("Demarrage programme principal")
@@ -362,9 +372,9 @@ class Poulailler:
 
     def detection_mvt(self, channel):
         if GPIO.input(channel):     # if port 25 == 1  
-            logging.debug("Rising edge detected on {}".format(channel))  
+            logging.debug("Mouvement detecté sur port {}".format(channel))  
         else:                  # if port 25 != 1  
-            logging.debug("Falling edge  detected on {}".format(channel))  
+            logging.debug("Absence mouvement sur port {}".format(channel))  
         # logging.debug('Mouvement detecté! {}'.format(channel))
 
 
