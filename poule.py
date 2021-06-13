@@ -20,6 +20,7 @@ utc=pytz.UTC
 
 # Logger
 logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.DEBUG)
+# logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s', level=logging.INFO)
 
 
 class Poulailler:
@@ -59,10 +60,7 @@ class Poulailler:
     ## Chemin des images
     PICDIR = 'pic' # Points to pic directory .
 
-    ##################
-    # NE PAS TOUCHER
-
-
+   
     # Action en cours 
     # -1 Descente , 0 arret, 1 montee
     ACTION = 0
@@ -91,16 +89,17 @@ class Poulailler:
             GPIO.setup(self.GPIO_FC_B, GPIO.IN, GPIO.PUD_UP)
 
             # on défini les BP up et down
-            GPIO.setup(self.GPIO_BP_UP, GPIO.IN, GPIO.PUD_UP)
-            GPIO.setup(self.GPIO_BP_DOWN, GPIO.IN, GPIO.PUD_UP)
-            GPIO.setup(self.GPIO_BP_STOP, GPIO.IN, GPIO.PUD_UP)
-            GPIO.add_event_detect(self.GPIO_BP_UP, GPIO.FALLING, callback=self.porte_ouvre, bouncetime=500)
-            GPIO.add_event_detect(self.GPIO_BP_DOWN, GPIO.FALLING, callback=self.porte_ferme, bouncetime=500)
-            GPIO.add_event_detect(self.GPIO_BP_STOP, GPIO.FALLING, callback=self.porte_stop, bouncetime=500)
+            GPIO.setup(self.GPIO_BP_UP, GPIO.IN, GPIO.PUD_DOWN)
+            GPIO.setup(self.GPIO_BP_DOWN, GPIO.IN, GPIO.PUD_DOWN)
+            GPIO.setup(self.GPIO_BP_STOP, GPIO.IN, GPIO.PUD_DOWN)
+
+            GPIO.add_event_detect(self.GPIO_BP_UP, GPIO.FALLING, callback=self.porte_ouvre, bouncetime=1000)
+            GPIO.add_event_detect(self.GPIO_BP_DOWN, GPIO.FALLING, callback=self.porte_ferme, bouncetime=1000)
+            # GPIO.add_event_detect(self.GPIO_BP_STOP, GPIO.FALLING, callback=self.porte_stop, bouncetime=500)
 
             # Events sur fin course  haut/bas
-            GPIO.add_event_detect(self.GPIO_FC_B, GPIO.FALLING, callback=self.porte_stop, bouncetime=500) 
-            GPIO.add_event_detect(self.GPIO_FC_H, GPIO.FALLING, callback=self.porte_stop, bouncetime=500)
+            # GPIO.add_event_detect(self.GPIO_FC_B, GPIO.RISING, callback=self.porte_stop, bouncetime=400) 
+            # GPIO.add_event_detect(self.GPIO_FC_H, GPIO.RISING, callback=self.porte_stop, bouncetime=400)
 
             # sortie output relais, ouvert par défaut
             GPIO.setup(self.GPIO_RL_1, GPIO.OUT, initial = GPIO.HIGH)
@@ -114,7 +113,7 @@ class Poulailler:
             # GPIO.setup(self.GPIO_MVT, GPIO.IN)
             # GPIO.add_event_detect(self.GPIO_MVT , GPIO.BOTH, callback=self.detection_mvt)
 
-            time.sleep(1)
+            time.sleep(.5)
             logging.debug("- Init GPIO OK")
 
         except IOError as e:
@@ -161,13 +160,18 @@ class Poulailler:
     # -------------------------------------------
     # Destructeur
     def __del__(self):
-        GPIO.cleanup()
+        '''
+        try: 
+            GPIO.cleanup()
+        except RuntimeWarning:
+            pass
+        '''
 
     # -------------------------------------------
     # Actionneurs
     # -------------------------------------------
 
-
+    '''
     def actionne(self, action):
 
         logging.debug("ACTIONNE action={}".format(action))
@@ -176,15 +180,17 @@ class Poulailler:
         if action  == self.ACTION:
             return 
 
+        
+
         # Si le moteur tourne deja, on l'arrete
         # if (action == -1 or action == 1) and self.ACTION != 0:
         if GPIO.input(self.GPIO_RL_1) ==  GPIO.LOW:
             GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
- 
+            time.sleep(.25)
 
         self.ACTION = action
 
-        # Montee
+        # Descente
         if action == -1:
             logging.debug("Set relais descente")
             GPIO.output(self.GPIO_RL_2, GPIO.HIGH)
@@ -192,6 +198,17 @@ class Poulailler:
             time.sleep(.5)
             logging.debug("Set relais moteur ON")
             GPIO.output(self.GPIO_RL_1, GPIO.LOW)
+            
+            # On attend la fin de la descente, ou le timeout
+            channel = GPIO.wait_for_edge(self.GPIO_FC_B, GPIO.RISING, timeout=10000)
+            if channel is None:
+                sys.exit('Timeout descente')
+            else:
+                logging.info("Arret moteur")
+                GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
+
+            return
+
         
         # Montee
         elif action == 1:
@@ -202,12 +219,21 @@ class Poulailler:
             logging.debug("Set relais moteur ON")
             GPIO.output(self.GPIO_RL_1, GPIO.LOW)
 
+            # On attend la fin de la descente, ou le timeout
+            channel = GPIO.wait_for_edge(self.GPIO_FC_H, GPIO.RISING, timeout=10000)
+            if channel is None:
+                sys.exit('Timeout montee')
+            else:
+                logging.info("Arret moteur")
+                GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
+            return
+
         
         # Arret
         elif action == 0:  
             logging.info("Arret moteur")
             GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
-    
+    '''
         
 
     def porte_ouvre(self, pin = None):
@@ -223,10 +249,28 @@ class Poulailler:
         # porte déja ouverte ? On ne fait rien
         if state == self.STATE_OPEN:
             logging.info("Porte deja ouverte")
-            return
+            return True
 
-        logging.info("Debut montée")
-        self.actionne(1)
+        logging.info("▲ Debut montée")
+        
+        logging.debug("Set relais montee")
+        GPIO.output(self.GPIO_RL_2, GPIO.LOW)
+        GPIO.output(self.GPIO_RL_3, GPIO.LOW)
+        time.sleep(.5)
+        logging.debug("Set relais moteur ON")
+        GPIO.output(self.GPIO_RL_1, GPIO.LOW)
+
+        # On attend la fin de la descente, ou le timeout
+        time.sleep(0.05)
+        channel = GPIO.wait_for_edge(self.GPIO_FC_H, GPIO.RISING) # , timeout=10000)
+        if channel is None:
+            return False
+        else:
+            logging.info("✖ Fin course Haut: Arret moteur")
+            GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
+        
+        return True
+
    
         
     def porte_ferme(self, pin=None):
@@ -242,10 +286,26 @@ class Poulailler:
         # porte déja fermee ? On ne fait rien
         if state == self.STATE_CLOSED:
             logging.info("Porte déja fermée")
-            return
+            return True
 
-        logging.info("Debut descente")
-        self.actionne(-1)
+        logging.info("▼ Debut descente")
+
+        logging.debug("Set relais descente")
+        GPIO.output(self.GPIO_RL_2, GPIO.HIGH)
+        GPIO.output(self.GPIO_RL_3, GPIO.HIGH)
+        time.sleep(.5)
+        logging.debug("Set relais moteur ON")
+        GPIO.output(self.GPIO_RL_1, GPIO.LOW)
+        
+        # On attend la fin de la descente, ou le timeout
+        time.sleep(0.05)
+        etat = GPIO.wait_for_edge(self.GPIO_FC_B, GPIO.RISING) # , timeout=10000)
+        if etat is None:
+            return False 
+        else:
+            logging.info("✖ Fin course bas: Arret moteur")
+            GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
+        return True
 
 
 
@@ -253,17 +313,8 @@ class Poulailler:
         
         logging.debug("STOP Evenement sur pin {}".format(pin))
 
-        # arret du moteur
-        if     self.ACTION == -1 and pin == self.GPIO_FC_B \
-            or self.ACTION == 1 and pin == self.GPIO_FC_H \
-            or pin == self.GPIO_BP_STOP : 
-            
-            self.actionne(0)
-        
-            if pin == self.GPIO_FC_B:
-                logging.info("Porte fermée")
-            elif pin == self.GPIO_FC_H:
-                logging.info("Porte ouverte")
+        logging.info("✖ Btn STOP > Arret moteur")
+        GPIO.output(self.GPIO_RL_1, GPIO.HIGH)
 
         
     # Position de la porte
@@ -273,8 +324,8 @@ class Poulailler:
     # -2: Etat schrödinger (ouverte & fermee en mm tps)
     def porte_etat(self):
         
-        fc_h =  not GPIO.input(self.GPIO_FC_H) # fin course haut
-        fc_b =  not GPIO.input(self.GPIO_FC_B) # fin course bas
+        fc_h =  GPIO.input(self.GPIO_FC_H) # fin course haut
+        fc_b =  GPIO.input(self.GPIO_FC_B) # fin course bas
         # erreur
         if fc_h == 1 and fc_b == 1:
             return self.STATE_ERR
@@ -310,6 +361,8 @@ class Poulailler:
         time_now = utc.localize(datetime.datetime.now())
         return (bool)(s["sunrise"] < time_now and time_now < s["sunset"]) 
 
+
+
     # Action à faire au lancement
     def load(self):
 
@@ -326,12 +379,12 @@ class Poulailler:
         # jour et porte fermée ou au milieu: On l'ouvre
         if True ==  is_jour and state != self.STATE_OPEN:
             logging.info("Jour et porte non ouverte -> Je l'ouvre")
-            self.porte_ouvre()
+            etat = self.porte_ouvre()
         
         # Nuit et porte ouverte
         elif False == is_jour and state != self.STATE_CLOSED:
             logging.info("Nuit et porte non ouverte -> Je la ferme")
-            self.porte_ferme()
+            etat = self.porte_ferme()
         
         # OK, jour et porte ouverte
         elif True == is_jour and state == self.STATE_OPEN:
@@ -344,12 +397,14 @@ class Poulailler:
             logging.debug("Etat bizare ?!?")
         
         ## Attente si action précédente
+        '''
         if self.ACTION != 0:
             logging.info("Attente fin de l'action en cours")
             while self.ACTION != 0:
                 logging.debug("ATTENTE ACTION {}".format(self.ACTION))
                 time.sleep(1)
-        
+        '''
+
         logging.debug("Demarrage programme principal")
         old_etat = self.is_jour()
         while True:                   
